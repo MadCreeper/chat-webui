@@ -169,6 +169,18 @@
       border-bottom-right-radius: 4px;
       padding: 1px 8px;
     }
+    .message.user .message-bubble .user-images {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 4px;
+    }
+    .message.user .message-bubble .user-images img {
+      max-width: 100px;
+      max-height: 100px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.3);
+    }
     .message.ai .message-bubble {
       background: #fff;
       color: #333;
@@ -266,6 +278,48 @@
       max-height: 120px;
     }
     #message-input:focus { outline: none; border-color: #2563eb; }
+    #upload-btn {
+      padding: 10px 14px;
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    #upload-btn:hover { background: #f5f5f5; }
+    #image-preview {
+      max-width: 600px;
+      margin: 10px auto 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .preview-item {
+      position: relative;
+      width: 60px;
+      height: 60px;
+    }
+    .preview-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid #e5e5e5;
+    }
+    .preview-item .remove-btn {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 18px;
+      height: 18px;
+      background: #e53935;
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      font-size: 12px;
+      cursor: pointer;
+      line-height: 1;
+    }
     #send-btn {
       padding: 12px 24px;
       background: #2563eb;
@@ -454,9 +508,12 @@
 
   <div id="input-area">
     <div id="input-container">
+      <input type="file" id="image-input" accept="image/*" multiple style="display: none;" onchange="handleImageUpload(event)">
+      <button id="upload-btn" onclick="document.getElementById('image-input').click()" title="上传图片">📎</button>
       <textarea id="message-input" placeholder="输入消息..." rows="1" onkeydown="handleKeydown(event)"></textarea>
       <button id="send-btn" onclick="sendMessage()">发送</button>
     </div>
+    <div id="image-preview" style="display: none;"></div>
   </div>
 
   <!-- Settings Modal -->
@@ -594,11 +651,26 @@
           if (aiGroup) {
             aiGroup = null;
           }
+
+          // Handle user message with images
+          let textContent = msg.content;
+          let imagesHtml = '';
+
+          if (Array.isArray(msg.content)) {
+            const textPart = msg.content.find(p => p.type === 'text');
+            const imageParts = msg.content.filter(p => p.type === 'image_url');
+            textContent = textPart ? textPart.text : '';
+            if (imageParts.length > 0) {
+              imagesHtml = `<div class="user-images">${imageParts.map(p => `<img src="${p.image_url.url}" alt="image">`).join('')}</div>`;
+            }
+          }
+
           const div = document.createElement('div');
           div.className = `message ${msg.role}`;
           div.innerHTML = `
             <div class="message-bubble">
-              ${escapeHtml(msg.content)}
+              ${imagesHtml}
+              ${escapeHtml(textContent)}
             </div>
           `;
           container.appendChild(div);
@@ -619,7 +691,9 @@
     async function sendMessage() {
       const input = document.getElementById('message-input');
       const content = input.value.trim();
-      if (!content) return;
+
+      // Allow sending if there's text OR images
+      if (!content && uploadedImages.length === 0) return;
       if (!currentChatId) {
         createNewChat();
       }
@@ -633,8 +707,12 @@
         return;
       }
 
+      // Build message content (text + images)
+      const messageContent = buildMessageContent(content, uploadedImages);
+      const hasImages = uploadedImages.length > 0;
+
       // Add user message
-      messages.push({ role: 'user', content });
+      messages.push({ role: 'user', content: messageContent, hasImages });
 
       // Update chat title if it's the first message
       if (messages.length === 1) {
@@ -645,8 +723,11 @@
       saveChats();
       renderMessages();
 
+      // Clear input and images
       input.value = '';
       input.style.height = 'auto';
+      uploadedImages = [];
+      renderImagePreviews();
 
       // Show typing indicator
       const container = document.getElementById('chat-container');
@@ -682,7 +763,22 @@
 
       // Estimate prompt tokens (rough estimate: ~4 chars per token)
       const messagesForApi = messages.slice(0, -1).slice(-20);
-      const promptText = messagesForApi.map(m => m.role + ': ' + m.content).join('\n');
+
+      // Build API messages - handle both text and image content
+      const buildApiMessage = (msg) => {
+        if (Array.isArray(msg.content)) {
+          // Has images
+          return { role: msg.role, content: msg.content };
+        }
+        return { role: msg.role, content: msg.content };
+      };
+
+      const promptText = messagesForApi.map(m => {
+        if (Array.isArray(m.content)) {
+          return m.role + ': ' + m.content.filter(p => p.type === 'text').map(p => p.text).join('');
+        }
+        return m.role + ': ' + m.content;
+      }).join('\n');
       promptTokens = Math.ceil(promptText.length / 4);
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -695,7 +791,7 @@
             },
             body: JSON.stringify({
               model: settings.model,
-              messages: messagesForApi.map(m => ({ role: m.role, content: m.content })),
+              messages: messagesForApi.map(buildApiMessage),
               stream: true
             })
           });
@@ -824,9 +920,21 @@
       // Remove the failed message
       messages.splice(msgIndex, 1);
 
-      // Set the user message content to input and send
+      // Set the user message content to input
       const input = document.getElementById('message-input');
-      input.value = userMsg.content;
+      if (Array.isArray(userMsg.content)) {
+        // Has images, extract text
+        const textPart = userMsg.content.find(p => p.type === 'text');
+        input.value = textPart ? textPart.text : '';
+        // Restore images
+        uploadedImages = userMsg.content.filter(p => p.type === 'image_url').map(p => ({
+          name: 'image',
+          dataUrl: p.image_url.url
+        }));
+        renderImagePreviews();
+      } else {
+        input.value = userMsg.content;
+      }
 
       saveChats();
       renderMessages();
@@ -917,6 +1025,71 @@
       saveSettingsToStorage();
       hideSettings();
       alert('设置已保存');
+    }
+
+    // Image handling
+    let uploadedImages = [];
+
+    function handleImageUpload(event) {
+      const files = event.target.files;
+      if (!files.length) return;
+
+      for (const file of files) {
+        if (!file.type.startsWith('image/')) {
+          alert('请选择图片文件');
+          continue;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          alert('图片大小不能超过10MB');
+          continue;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          uploadedImages.push({
+            name: file.name,
+            dataUrl: e.target.result
+          });
+          renderImagePreviews();
+        };
+        reader.readAsDataURL(file);
+      }
+      event.target.value = '';
+    }
+
+    function renderImagePreviews() {
+      const container = document.getElementById('image-preview');
+      if (uploadedImages.length === 0) {
+        container.style.display = 'none';
+        return;
+      }
+      container.style.display = 'flex';
+      container.innerHTML = uploadedImages.map((img, i) => `
+        <div class="preview-item">
+          <img src="${img.dataUrl}" alt="${img.name}">
+          <button class="remove-btn" onclick="removeImage(${i})">×</button>
+        </div>
+      `).join('');
+    }
+
+    function removeImage(index) {
+      uploadedImages.splice(index, 1);
+      renderImagePreviews();
+    }
+
+    function buildMessageContent(text, images) {
+      if (images.length === 0) return text;
+
+      const parts = [];
+      if (text) parts.push({ type: 'text', text });
+      for (const img of images) {
+        parts.push({
+          type: 'image_url',
+          image_url: { url: img.dataUrl }
+        });
+      }
+      return parts;
+    }
     }
 
     // Clear chat (current conversation)
