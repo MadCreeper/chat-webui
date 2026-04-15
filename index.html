@@ -737,7 +737,8 @@
           chat.tokenUsage.total += promptTokens + completionTokens;
           updateTokenStats();
 
-          saveChats();
+          // Render with markdown after streaming completes
+          renderMessages();
           break;
 
         } catch (error) {
@@ -751,14 +752,14 @@
       if (lastError && !assistantMessage.content) {
         assistantMessage.content = '❌ 请求失败: ' + lastError.message + ' (已重试' + maxRetries + '次)';
         renderStreamingMessage(placeholderDiv, assistantMessage);
+        saveChats();
       }
 
-      saveChats();
       document.getElementById('typing-indicator')?.remove();
       document.getElementById('send-btn').disabled = false;
     }
 
-    // Render streaming message (partial update)
+    // Render streaming message (partial update) - skip markdown for performance
     function renderStreamingMessage(container, msg) {
       container.innerHTML = '';
       const div = document.createElement('div');
@@ -771,9 +772,15 @@
         <span class="model-tag">${msg.model || settings.model}</span>
         ${msg.tokens ? `<span>${msg.tokens} tokens</span>` : ''}
       </div>`;
-      const contentHtml = marked.parse(msg.content);
+      // Use plain text during streaming to avoid flickering
+      const contentHtml = escapeHtml(msg.content);
       div.innerHTML = `<div class="message-bubble">${contentHtml}${metaHtml}${retryBtn}</div>`;
       container.appendChild(div);
+    }
+
+    // Re-render all messages with markdown after streaming completes
+    function renderMessagesWithMarkdown() {
+      renderMessages();
     }
 
     // Handle Enter key
