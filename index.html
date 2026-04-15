@@ -367,8 +367,19 @@
         <input type="password" id="api-key" placeholder="sk-...">
       </div>
       <div class="form-group">
-        <label>模型名称</label>
-        <input type="text" id="model-name" placeholder="gpt-4o">
+        <label>模型</label>
+        <select id="model-select" onchange="handleModelChange()">
+          <option value="minimax-m2.5">minimax-m2.5</option>
+          <option value="kimi-k2.5">kimi-k2.5</option>
+          <option value="glm-4.7">glm-4.7</option>
+          <option value="deepseek-v3.2">deepseek-v3.2</option>
+          <option value="custom">自定义...</option>
+          <option value="doubao-seed-2.0-code">doubao-seed-2.0-code</option>
+          <option value="doubao-seed-2.0-pro">doubao-seed-2.0-pro</option>
+          <option value="doubao-seed-2.0-lite">doubao-seed-2.0-lite</option>
+          <option value="doubao-seed-code">doubao-seed-code</option>
+        </select>
+        <input type="text" id="model-name" placeholder="输入自定义模型ID" style="display: none; margin-top: 8px;">
       </div>
       <div class="modal-actions">
         <button class="cancel" onclick="hideSettings()">取消</button>
@@ -386,7 +397,7 @@
     let settings = {
       apiUrl: '',
       apiKey: '',
-      model: 'gpt-4o'
+      model: 'minimax-m2.5'
     };
 
     // Get current messages
@@ -623,13 +634,43 @@
     function loadSettingsToModal() {
       document.getElementById('api-url').value = settings.apiUrl;
       document.getElementById('api-key').value = settings.apiKey;
-      document.getElementById('model-name').value = settings.model;
+
+      const select = document.getElementById('model-select');
+      const customInput = document.getElementById('model-name');
+
+      const presetModels = ['minimax-m2.5', 'kimi-k2.5', 'glm-4.7', 'deepseek-v3.2', 'doubao-seed-2.0-code', 'doubao-seed-2.0-pro', 'doubao-seed-2.0-lite', 'doubao-seed-code'];
+      if (presetModels.includes(settings.model)) {
+        select.value = settings.model;
+        customInput.style.display = 'none';
+        customInput.value = '';
+      } else {
+        select.value = 'custom';
+        customInput.style.display = 'block';
+        customInput.value = settings.model;
+      }
+    }
+
+    function handleModelChange() {
+      const select = document.getElementById('model-select');
+      const customInput = document.getElementById('model-name');
+      if (select.value === 'custom') {
+        customInput.style.display = 'block';
+        customInput.focus();
+      } else {
+        customInput.style.display = 'none';
+        customInput.value = '';
+      }
     }
 
     function saveSettings() {
       settings.apiUrl = document.getElementById('api-url').value.trim();
       settings.apiKey = document.getElementById('api-key').value.trim();
-      settings.model = document.getElementById('model-name').value.trim() || 'gpt-4o';
+
+      const select = document.getElementById('model-select');
+      const customInput = document.getElementById('model-name');
+      settings.model = select.value === 'custom' ? customInput.value.trim() : select.value;
+
+      if (!settings.model) settings.model = 'minimax-m2.5';
 
       saveSettingsToStorage();
       hideSettings();
