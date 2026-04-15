@@ -852,7 +852,8 @@
           chat.tokenUsage.total += promptTokens + completionTokens;
           updateTokenStats();
 
-          // Render with markdown after streaming completes
+          // Save and render with markdown after streaming completes
+          saveChats();
           renderMessages();
           break;
 
