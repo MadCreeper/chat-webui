@@ -166,7 +166,7 @@
       background: #2563eb;
       color: #fff;
       border-bottom-right-radius: 4px;
-      padding: 2px 8px;
+      padding: 1px 8px;
     }
     .message.ai .message-bubble {
       background: #fff;
@@ -538,50 +538,62 @@
       // Disable send button
       document.getElementById('send-btn').disabled = true;
 
-      try {
-        const response = await fetch(settings.apiUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${settings.apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: settings.model,
-            messages: messages.slice(-20).map(m => ({ role: m.role, content: m.content })),
-            stream: false
-          })
-        });
+      const maxRetries = 3;
+      let lastError = null;
 
-        if (!response.ok) {
-          throw new Error(`API错误: ${response.status}`);
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const response = await fetch(settings.apiUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${settings.apiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: settings.model,
+              messages: messages.slice(-20).map(m => ({ role: m.role, content: m.content })),
+              stream: false
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error(`API错误: ${response.status}`);
+          }
+
+          const data = await response.json();
+          const reply = data.choices?.[0]?.message?.content || '无回复';
+          const usage = data.usage;
+
+          // Extract token usage if available
+          if (usage) {
+            const chat = chats[currentChatId];
+            chat.tokenUsage.prompt += usage.prompt_tokens || 0;
+            chat.tokenUsage.completion += usage.completion_tokens || 0;
+            chat.tokenUsage.total += usage.total_tokens || 0;
+            updateTokenStats();
+          }
+
+          messages.push({ role: 'assistant', content: reply, model: settings.model, tokens: usage?.total_tokens });
+          saveChats();
+          renderMessages();
+          break; // Success, exit retry loop
+
+        } catch (error) {
+          lastError = error;
+          if (attempt < maxRetries) {
+            await new Promise(r => setTimeout(r, 1000 * attempt)); // Wait 1s, 2s, 3s
+          }
         }
-
-        const data = await response.json();
-        const reply = data.choices?.[0]?.message?.content || '无回复';
-        const usage = data.usage;
-
-        // Extract token usage if available
-        if (usage) {
-          const chat = chats[currentChatId];
-          chat.tokenUsage.prompt += usage.prompt_tokens || 0;
-          chat.tokenUsage.completion += usage.completion_tokens || 0;
-          chat.tokenUsage.total += usage.total_tokens || 0;
-          updateTokenStats();
-        }
-
-        messages.push({ role: 'assistant', content: reply, model: settings.model, tokens: usage?.total_tokens });
-        saveChats();
-        renderMessages();
-
-      } catch (error) {
-        alert('错误: ' + error.message);
-        messages.push({ role: 'assistant', content: '❌ 请求失败: ' + error.message });
-        saveChats();
-        renderMessages();
-      } finally {
-        document.getElementById('typing-indicator')?.remove();
-        document.getElementById('send-btn').disabled = false;
       }
+
+      if (lastError && !messages.some(m => m.role === 'assistant' && !m.content.startsWith('❌'))) {
+        messages.push({ role: 'assistant', content: '❌ 请求失败: ' + lastError.message + ' (已重试' + maxRetries + '次)' });
+        saveChats();
+        renderMessages();
+      }
+
+      document.getElementById('typing-indicator')?.remove();
+      document.getElementById('send-btn').disabled = false;
     }
 
     // Handle Enter key
