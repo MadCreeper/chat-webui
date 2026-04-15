@@ -174,6 +174,23 @@
       color: #333;
       border: 1px solid #e5e5e5;
       border-bottom-left-radius: 4px;
+      position: relative;
+    }
+    .message.ai .retry-btn {
+      position: absolute;
+      right: 8px;
+      top: 8px;
+      padding: 4px 8px;
+      font-size: 11px;
+      background: #f5f5f5;
+      border: 1px solid #e5e5e5;
+      border-radius: 4px;
+      cursor: pointer;
+      color: #666;
+    }
+    .message.ai .retry-btn:hover {
+      background: #e5e5e5;
+      color: #333;
     }
 
     /* AI message metadata with model info */
@@ -555,7 +572,9 @@
           </div>`;
           // Use marked for markdown rendering
           const contentHtml = marked.parse(msg.content);
-          div.innerHTML = `<div class="message-bubble">${contentHtml}${metaHtml}</div>`;
+          const isFailed = msg.content.startsWith('❌');
+          const retryBtn = isFailed ? `<button class="retry-btn" onclick="retryMessage(${index})">重试</button>` : '';
+          div.innerHTML = `<div class="message-bubble">${contentHtml}${metaHtml}${retryBtn}</div>`;
           aiGroup.appendChild(div);
         } else {
           // Close any AI group before user message
@@ -629,7 +648,7 @@
       document.getElementById('send-btn').disabled = true;
 
       // Create placeholder for streaming response
-      const assistantMessage = { role: 'assistant', content: '', model: settings.model, tokens: 0 };
+      const assistantMessage = { role: 'assistant', content: '', model: settings.model, tokens: 0, index: messages.length };
       messages.push(assistantMessage);
 
       // Add placeholder message to render
@@ -744,12 +763,16 @@
       container.innerHTML = '';
       const div = document.createElement('div');
       div.className = 'message ai';
+
+      const isFailed = msg.content.startsWith('❌');
+      const retryBtn = isFailed ? `<button class="retry-btn" onclick="retryMessage(${msg.index})">重试</button>` : '';
+
       const metaHtml = `<div class="meta">
         <span class="model-tag">${msg.model || settings.model}</span>
         ${msg.tokens ? `<span>${msg.tokens} tokens</span>` : ''}
       </div>`;
       const contentHtml = marked.parse(msg.content);
-      div.innerHTML = `<div class="message-bubble">${contentHtml}${metaHtml}</div>`;
+      div.innerHTML = `<div class="message-bubble">${contentHtml}${metaHtml}${retryBtn}</div>`;
       container.appendChild(div);
     }
 
@@ -759,6 +782,31 @@
         event.preventDefault();
         sendMessage();
       }
+    }
+
+    // Retry failed message
+    async function retryMessage(msgIndex) {
+      const messages = getCurrentMessages();
+      const msg = messages[msgIndex];
+
+      if (!msg || !msg.content.startsWith('❌')) return;
+
+      // Find the user message before this failed response
+      const userMsg = messages.slice(0, msgIndex).reverse().find(m => m.role === 'user');
+      if (!userMsg) return;
+
+      // Remove the failed message
+      messages.splice(msgIndex, 1);
+
+      // Set the user message content to input and send
+      const input = document.getElementById('message-input');
+      input.value = userMsg.content;
+
+      saveChats();
+      renderMessages();
+
+      // Send the message
+      await sendMessage();
     }
 
     // Auto-resize textarea
