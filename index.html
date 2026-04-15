@@ -602,8 +602,19 @@
       // Disable send button
       document.getElementById('send-btn').disabled = true;
 
-      const maxRetries = 3;
+      // Create placeholder for streaming response
+      const assistantMessage = { role: 'assistant', content: '', model: settings.model, tokens: 0 };
+      messages.push(assistantMessage);
+
+      // Add placeholder message to render
+      const placeholderDiv = document.createElement('div');
+      placeholderDiv.className = 'message-group';
+      container.insertBefore(placeholderDiv, typing);
+      renderStreamingMessage(placeholderDiv, assistantMessage);
+
+      let totalTokens = 0;
       let lastError = null;
+      const maxRetries = 3;
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
@@ -615,8 +626,8 @@
             },
             body: JSON.stringify({
               model: settings.model,
-              messages: messages.slice(-20).map(m => ({ role: m.role, content: m.content })),
-              stream: false
+              messages: messages.slice(0, -1).slice(-20).map(m => ({ role: m.role, content: m.content })),
+              stream: true
             })
           });
 
@@ -624,40 +635,88 @@
             throw new Error(`API错误: ${response.status}`);
           }
 
-          const data = await response.json();
-          const reply = data.choices?.[0]?.message?.content || '无回复';
-          const usage = data.usage;
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
 
-          // Extract token usage if available
-          if (usage) {
-            const chat = chats[currentChatId];
-            chat.tokenUsage.prompt += usage.prompt_tokens || 0;
-            chat.tokenUsage.completion += usage.completion_tokens || 0;
-            chat.tokenUsage.total += usage.total_tokens || 0;
-            updateTokenStats();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || !trimmed.startsWith('data:')) continue;
+
+              const data = trimmed.slice(5).trim();
+              if (data === '[DONE]') continue;
+
+              try {
+                const json = JSON.parse(data);
+                const content = json.choices?.[0]?.delta?.content || '';
+                if (content) {
+                  assistantMessage.content += content;
+                  renderStreamingMessage(placeholderDiv, assistantMessage);
+                  container.scrollTop = container.scrollHeight;
+                }
+                // Track token count from usage if available
+                if (json.usage) {
+                  totalTokens = json.usage.total_tokens || 0;
+                }
+              } catch (e) {
+                // Skip invalid JSON
+              }
+            }
           }
 
-          messages.push({ role: 'assistant', content: reply, model: settings.model, tokens: usage?.total_tokens });
+          // If no streaming usage, estimate from content length
+          if (totalTokens === 0) {
+            totalTokens = Math.ceil(assistantMessage.content.length / 4);
+          }
+          assistantMessage.tokens = totalTokens;
+
+          // Update token stats
+          const chat = chats[currentChatId];
+          chat.tokenUsage.completion += totalTokens;
+          chat.tokenUsage.total += totalTokens;
+          updateTokenStats();
+
           saveChats();
-          renderMessages();
-          break; // Success, exit retry loop
+          break;
 
         } catch (error) {
           lastError = error;
           if (attempt < maxRetries) {
-            await new Promise(r => setTimeout(r, 1000 * attempt)); // Wait 1s, 2s, 3s
+            await new Promise(r => setTimeout(r, 1000 * attempt));
           }
         }
       }
 
-      if (lastError && !messages.some(m => m.role === 'assistant' && !m.content.startsWith('❌'))) {
-        messages.push({ role: 'assistant', content: '❌ 请求失败: ' + lastError.message + ' (已重试' + maxRetries + '次)' });
-        saveChats();
-        renderMessages();
+      if (lastError && !assistantMessage.content) {
+        assistantMessage.content = '❌ 请求失败: ' + lastError.message + ' (已重试' + maxRetries + '次)';
+        renderStreamingMessage(placeholderDiv, assistantMessage);
       }
 
+      saveChats();
       document.getElementById('typing-indicator')?.remove();
       document.getElementById('send-btn').disabled = false;
+    }
+
+    // Render streaming message (partial update)
+    function renderStreamingMessage(container, msg) {
+      container.innerHTML = '';
+      const div = document.createElement('div');
+      div.className = 'message ai';
+      const metaHtml = `<div class="meta">
+        <span class="model-tag">${msg.model || settings.model}</span>
+        ${msg.tokens ? `<span>${msg.tokens} tokens</span>` : ''}
+      </div>`;
+      const contentHtml = marked.parse(msg.content);
+      div.innerHTML = `<div class="message-bubble">${contentHtml}${metaHtml}</div>`;
+      container.appendChild(div);
     }
 
     // Handle Enter key
