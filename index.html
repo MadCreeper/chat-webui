@@ -192,6 +192,27 @@
       background: #e5e5e5;
       color: #333;
     }
+    .message.ai .toggle-btn {
+      position: absolute;
+      right: 8px;
+      top: 8px;
+      padding: 4px 8px;
+      font-size: 11px;
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 4px;
+      cursor: pointer;
+      color: #666;
+    }
+    .message.ai .toggle-btn:hover {
+      background: #f5f5f5;
+      color: #333;
+    }
+    .message.ai .toggle-btn.active {
+      background: #2563eb;
+      color: #fff;
+      border-color: #2563eb;
+    }
 
     /* AI message metadata with model info */
     .message .meta {
@@ -339,11 +360,15 @@
     .message-bubble {
       text-align: left;
     }
-    .message-bubble > *:first-child {
+    .message-bubble .md-content > *:first-child {
       margin-top: 0;
     }
-    .message-bubble > *:last-child {
+    .message-bubble .md-content > *:last-child {
       margin-bottom: 0;
+    }
+    .message-bubble .md-content pre {
+      white-space: pre-wrap;
+      word-wrap: break-word;
     }
     .message-bubble p {
       margin: 0 0 8px 0;
@@ -574,7 +599,8 @@
           const contentHtml = marked.parse(msg.content);
           const isFailed = msg.content.startsWith('❌');
           const retryBtn = isFailed ? `<button class="retry-btn" onclick="retryMessage(${index})">重试</button>` : '';
-          div.innerHTML = `<div class="message-bubble">${contentHtml}${metaHtml}${retryBtn}</div>`;
+          const toggleBtn = !isFailed ? `<button class="toggle-btn" onclick="toggleRawText(${index}, this)">Raw</button>` : '';
+          div.innerHTML = `<div class="message-bubble"><div class="md-content">${contentHtml}</div>${metaHtml}${retryBtn}${toggleBtn}</div>`;
           aiGroup.appendChild(div);
         } else {
           // Close any AI group before user message
@@ -820,6 +846,28 @@
 
       // Send the message
       await sendMessage();
+    }
+
+    // Toggle between markdown and raw text
+    function toggleRawText(msgIndex, btn) {
+      const messages = getCurrentMessages();
+      const msg = messages[msgIndex];
+      if (!msg) return;
+
+      const bubble = btn.closest('.message-bubble');
+      const contentDiv = bubble.querySelector('.md-content');
+
+      if (btn.classList.contains('active')) {
+        // Switch to markdown view
+        btn.classList.remove('active');
+        btn.textContent = 'Raw';
+        contentDiv.innerHTML = marked.parse(msg.content);
+      } else {
+        // Switch to raw text view
+        btn.classList.add('active');
+        btn.textContent = 'MD';
+        contentDiv.innerHTML = '<pre style="white-space: pre-wrap; word-wrap: break-word;">' + escapeHtml(msg.content) + '</pre>';
+      }
     }
 
     // Auto-resize textarea
