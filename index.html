@@ -176,42 +176,28 @@
       border-bottom-left-radius: 4px;
       position: relative;
     }
-    .message.ai .retry-btn {
-      position: absolute;
-      right: 8px;
-      top: 8px;
-      padding: 4px 8px;
-      font-size: 11px;
+    .message.ai .retry-btn, .message.ai .toggle-btn {
+      padding: 2px 6px;
+      font-size: 10px;
       background: #f5f5f5;
       border: 1px solid #e5e5e5;
-      border-radius: 4px;
+      border-radius: 3px;
       cursor: pointer;
-      color: #666;
+      color: #999;
+      margin-left: 4px;
     }
-    .message.ai .retry-btn:hover {
+    .message.ai .retry-btn:hover, .message.ai .toggle-btn:hover {
       background: #e5e5e5;
-      color: #333;
-    }
-    .message.ai .toggle-btn {
-      position: absolute;
-      right: 8px;
-      top: 8px;
-      padding: 4px 8px;
-      font-size: 11px;
-      background: #fff;
-      border: 1px solid #e5e5e5;
-      border-radius: 4px;
-      cursor: pointer;
       color: #666;
+    }
+    .message.ai .message-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 4px;
     }
     .message.ai .toggle-btn:hover {
       background: #f5f5f5;
       color: #333;
-    }
-    .message.ai .toggle-btn.active {
-      background: #2563eb;
-      color: #fff;
-      border-color: #2563eb;
     }
 
     /* AI message metadata with model info */
@@ -600,7 +586,8 @@
           const isFailed = msg.content.startsWith('❌');
           const retryBtn = isFailed ? `<button class="retry-btn" onclick="retryMessage(${index})">重试</button>` : '';
           const toggleBtn = !isFailed ? `<button class="toggle-btn" onclick="toggleRawText(${index}, this)">Raw</button>` : '';
-          div.innerHTML = `<div class="message-bubble"><div class="md-content">${contentHtml}</div>${metaHtml}${retryBtn}${toggleBtn}</div>`;
+          const actionsHtml = (retryBtn || toggleBtn) ? `<div class="message-actions">${retryBtn}${toggleBtn}</div>` : '';
+          div.innerHTML = `<div class="message-bubble"><div class="md-content">${contentHtml}</div>${metaHtml}${actionsHtml}</div>`;
           aiGroup.appendChild(div);
         } else {
           // Close any AI group before user message
@@ -783,8 +770,8 @@
 
       if (lastError && !assistantMessage.content) {
         assistantMessage.content = '❌ 请求失败: ' + lastError.message + ' (已重试' + maxRetries + '次)';
-        bubbleDiv.innerText = assistantMessage.content;
         saveChats();
+        renderMessages();
       }
 
       document.getElementById('typing-indicator')?.remove();
