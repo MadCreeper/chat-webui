@@ -23,7 +23,83 @@
       justify-content: space-between;
       align-items: center;
     }
-    header h1 { font-size: 18px; color: #333; }
+    header h1 { font-size: 18px; color: #333; cursor: pointer; }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .chat-selector {
+      position: relative;
+    }
+    .chat-selector select {
+      padding: 6px 12px;
+      border: 1px solid #e5e5e5;
+      border-radius: 4px;
+      font-size: 13px;
+      background: #fff;
+      cursor: pointer;
+      min-width: 180px;
+    }
+    .chat-selector select:focus { outline: none; border-color: #2563eb; }
+
+    /* Chat list dropdown */
+    #chat-list-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      max-height: 300px;
+      overflow-y: auto;
+      z-index: 100;
+    }
+    #chat-list-dropdown.show { display: block; }
+    .chat-list-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .chat-list-item:last-child { border-bottom: none; }
+    .chat-list-item:hover { background: #f5f5f5; }
+    .chat-list-item.active { background: #f0f7ff; }
+    .chat-list-item .title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+    .chat-list-item .delete-btn {
+      padding: 2px 6px;
+      font-size: 11px;
+      color: #999;
+      background: none;
+      border: none;
+      cursor: pointer;
+      opacity: 0;
+    }
+    .chat-list-item:hover .delete-btn { opacity: 1; }
+    .chat-list-item .delete-btn:hover { color: #e53935; }
+    .chat-list-empty {
+      padding: 20px;
+      text-align: center;
+      color: #999;
+      font-size: 13px;
+    }
+    .new-chat-btn {
+      padding: 6px 12px;
+      border: 1px solid #e5e5e5;
+      background: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #2563eb;
+    }
+    .new-chat-btn:hover { background: #f0f7ff; }
     .header-actions button {
       padding: 6px 12px;
       margin-left: 8px;
@@ -41,7 +117,7 @@
       flex: 1;
       overflow-y: auto;
       padding: 20px;
-      max-width: 600px;
+      max-width: 900px;
       width: 100%;
       margin: 0 auto;
     }
@@ -49,7 +125,7 @@
     /* Messages */
     .message {
       display: flex;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
       animation: fadeIn 0.2s ease;
     }
     @keyframes fadeIn {
@@ -59,13 +135,33 @@
     .message.user { justify-content: flex-end; }
     .message.ai { justify-content: flex-start; }
 
+    .message-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .message-group .message { margin-bottom: 0; }
+
+    /* Differentiate consecutive AI messages */
+    .message-group .message.ai:first-child .message-bubble {
+      border-top-left-radius: 12px;
+    }
+    .message-group .message.ai:last-child .message-bubble {
+      border-bottom-left-radius: 12px;
+    }
+    .message-group .message.ai:not(:first-child):not(:last-child) .message-bubble {
+      border-radius: 0;
+      border-top: 1px solid #f0f0f0;
+    }
+
     .message-bubble {
-      max-width: 70%;
+      max-width: 80%;
       padding: 12px 16px;
       border-radius: 12px;
-      line-height: 1.5;
+      line-height: 1.6;
       white-space: pre-wrap;
       word-break: break-word;
+      min-height: 44px;
     }
     .message.user .message-bubble {
       background: #2563eb;
@@ -79,12 +175,21 @@
       border-bottom-left-radius: 4px;
     }
 
+    /* AI message metadata with model info */
     .message .meta {
       font-size: 11px;
       color: #999;
       margin-top: 4px;
+      display: flex;
+      gap: 8px;
     }
-    .message.user .meta { text-align: right; }
+    .message .meta .model-tag {
+      background: #f0f0f0;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+    }
+    .message.user .meta { text-align: right; justify-content: flex-end; }
 
     /* Typing indicator */
     .typing {
@@ -215,7 +320,18 @@
 </head>
 <body>
   <header>
-    <h1>💬 Chat</h1>
+    <div class="header-left">
+      <h1>💬 Chat</h1>
+      <div class="chat-selector" style="position: relative;">
+        <select id="chat-select" onchange="switchChat(this.value)">
+          <option value="">新对话</option>
+        </select>
+        <div id="chat-list-dropdown">
+          <div id="chat-list-container"></div>
+        </div>
+      </div>
+      <button class="new-chat-btn" onclick="createNewChat()">+ 新建</button>
+    </div>
     <div class="header-actions">
       <button onclick="showSettings()">设置</button>
       <button class="danger" onclick="clearChat()">清空</button>
@@ -263,32 +379,52 @@
 
   <script>
     // State
-    const STORAGE_KEY = 'chat_messages';
+    const CHATS_KEY = 'chat_chats';
     const SETTINGS_KEY = 'chat_settings';
-    let messages = [];
+    let chats = {};  // { chatId: { title, messages: [], tokenUsage, createdAt } }
+    let currentChatId = null;
     let settings = {
       apiUrl: '',
       apiKey: '',
       model: 'gpt-4o'
     };
-    let tokenUsage = { prompt: 0, completion: 0, total: 0 };
+
+    // Get current messages
+    function getCurrentMessages() {
+      return chats[currentChatId]?.messages || [];
+    }
+
+    // Get current token usage
+    function getCurrentTokenUsage() {
+      return chats[currentChatId]?.tokenUsage || { prompt: 0, completion: 0, total: 0 };
+    }
 
     // Load from localStorage
     function loadData() {
-      const savedMessages = localStorage.getItem(STORAGE_KEY);
+      const savedChats = localStorage.getItem(CHATS_KEY);
       const savedSettings = localStorage.getItem(SETTINGS_KEY);
 
-      if (savedMessages) messages = JSON.parse(savedMessages);
+      if (savedChats) chats = JSON.parse(savedChats);
       if (savedSettings) settings = { ...settings, ...JSON.parse(savedSettings) };
 
+      // If no chats, create a default one
+      if (Object.keys(chats).length === 0) {
+        createNewChat();
+      } else {
+        // Select most recent chat
+        const chatIds = Object.keys(chats).sort((a, b) => chats[b].createdAt - chats[a].createdAt);
+        currentChatId = chatIds[0];
+      }
+
+      updateChatSelect();
       renderMessages();
       updateTokenStats();
       loadSettingsToModal();
     }
 
     // Save to localStorage
-    function saveMessages() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    function saveChats() {
+      localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
     }
 
     function saveSettingsToStorage() {
@@ -299,10 +435,12 @@
     function renderMessages() {
       const container = document.getElementById('chat-container');
       const emptyState = document.getElementById('empty-state');
+      const messages = getCurrentMessages();
 
       if (messages.length === 0) {
         emptyState.style.display = 'block';
         container.querySelectorAll('.message').forEach(m => m.remove());
+        container.querySelectorAll('.message-group').forEach(m => m.remove());
         return;
       }
 
@@ -310,17 +448,39 @@
 
       // Clear existing messages
       container.querySelectorAll('.message').forEach(m => m.remove());
+      container.querySelectorAll('.message-group').forEach(m => m.remove());
 
-      messages.forEach(msg => {
-        const div = document.createElement('div');
-        div.className = `message ${msg.role}`;
-        div.innerHTML = `
-          <div class="message-bubble">
-            ${escapeHtml(msg.content)}
-            ${msg.tokens ? `<div class="meta">${msg.tokens} tokens</div>` : ''}
-          </div>
-        `;
-        container.appendChild(div);
+      // Group consecutive AI messages together for visual distinction
+      let aiGroup = null;
+      messages.forEach((msg, index) => {
+        if (msg.role === 'assistant') {
+          if (!aiGroup) {
+            aiGroup = document.createElement('div');
+            aiGroup.className = 'message-group';
+            container.appendChild(aiGroup);
+          }
+          const div = document.createElement('div');
+          div.className = 'message ai';
+          const metaHtml = `<div class="meta">
+            <span class="model-tag">${msg.model || settings.model}</span>
+            ${msg.tokens ? `<span>${msg.tokens} tokens</span>` : ''}
+          </div>`;
+          div.innerHTML = `<div class="message-bubble">${escapeHtml(msg.content)}${metaHtml}</div>`;
+          aiGroup.appendChild(div);
+        } else {
+          // Close any AI group before user message
+          if (aiGroup) {
+            aiGroup = null;
+          }
+          const div = document.createElement('div');
+          div.className = `message ${msg.role}`;
+          div.innerHTML = `
+            <div class="message-bubble">
+              ${escapeHtml(msg.content)}
+            </div>
+          `;
+          container.appendChild(div);
+        }
       });
 
       // Scroll to bottom
@@ -338,6 +498,11 @@
       const input = document.getElementById('message-input');
       const content = input.value.trim();
       if (!content) return;
+      if (!currentChatId) {
+        createNewChat();
+      }
+
+      const messages = getCurrentMessages();
 
       // Check settings
       if (!settings.apiUrl || !settings.apiKey) {
@@ -348,7 +513,14 @@
 
       // Add user message
       messages.push({ role: 'user', content });
-      saveMessages();
+
+      // Update chat title if it's the first message
+      if (messages.length === 1) {
+        chats[currentChatId].title = content.slice(0, 30) + (content.length > 30 ? '...' : '');
+        updateChatSelect();
+      }
+
+      saveChats();
       renderMessages();
 
       input.value = '';
@@ -386,24 +558,25 @@
 
         const data = await response.json();
         const reply = data.choices?.[0]?.message?.content || '无回复';
+        const usage = data.usage;
 
         // Extract token usage if available
-        const usage = data.usage;
         if (usage) {
-          tokenUsage.prompt += usage.prompt_tokens || 0;
-          tokenUsage.completion += usage.completion_tokens || 0;
-          tokenUsage.total += usage.total_tokens || 0;
+          const chat = chats[currentChatId];
+          chat.tokenUsage.prompt += usage.prompt_tokens || 0;
+          chat.tokenUsage.completion += usage.completion_tokens || 0;
+          chat.tokenUsage.total += usage.total_tokens || 0;
           updateTokenStats();
         }
 
-        messages.push({ role: 'assistant', content: reply });
-        saveMessages();
+        messages.push({ role: 'assistant', content: reply, model: settings.model, tokens: usage?.total_tokens });
+        saveChats();
         renderMessages();
 
       } catch (error) {
         alert('错误: ' + error.message);
         messages.push({ role: 'assistant', content: '❌ 请求失败: ' + error.message });
-        saveMessages();
+        saveChats();
         renderMessages();
       } finally {
         document.getElementById('typing-indicator')?.remove();
@@ -451,12 +624,12 @@
       alert('设置已保存');
     }
 
-    // Clear chat
+    // Clear chat (current conversation)
     function clearChat() {
-      if (confirm('确定要清空所有聊天记录吗？')) {
-        messages = [];
-        tokenUsage = { prompt: 0, completion: 0, total: 0 };
-        saveMessages();
+      if (confirm('确定要清空当前聊天记录吗？')) {
+        chats[currentChatId].messages = [];
+        chats[currentChatId].tokenUsage = { prompt: 0, completion: 0, total: 0 };
+        saveChats();
         updateTokenStats();
         renderMessages();
       }
@@ -465,8 +638,92 @@
     // Token stats
     function updateTokenStats() {
       const stats = document.getElementById('token-stats');
+      const tokenUsage = getCurrentTokenUsage();
       stats.textContent = `Tokens: ${tokenUsage.total.toLocaleString()} (Prompt: ${tokenUsage.prompt.toLocaleString()} | Completion: ${tokenUsage.completion.toLocaleString()})`;
     }
+
+    // Multi-chat functions
+    function createNewChat() {
+      const chatId = 'chat_' + Date.now();
+      chats[chatId] = {
+        title: '新对话',
+        messages: [],
+        tokenUsage: { prompt: 0, completion: 0, total: 0 },
+        createdAt: Date.now()
+      };
+      currentChatId = chatId;
+      saveChats();
+      updateChatSelect();
+      renderMessages();
+      updateTokenStats();
+    }
+
+    function switchChat(chatId) {
+      if (chatId) {
+        currentChatId = chatId;
+        saveChats();
+        renderMessages();
+        updateTokenStats();
+      }
+    }
+
+    function updateChatSelect() {
+      const select = document.getElementById('chat-select');
+      const sortedChats = Object.keys(chats).sort((a, b) => chats[b].createdAt - chats[a].createdAt);
+
+      select.innerHTML = sortedChats.map(id =>
+        `<option value="${id}" ${id === currentChatId ? 'selected' : ''}>${escapeHtml(chats[id].title || '新对话')}</option>`
+      ).join('');
+    }
+
+    function showChatList() {
+      renderChatList();
+      document.getElementById('chat-list-dropdown').classList.toggle('show');
+    }
+
+    function renderChatList() {
+      const container = document.getElementById('chat-list-container');
+      const sortedChats = Object.keys(chats).sort((a, b) => chats[b].createdAt - chats[a].createdAt);
+
+      if (sortedChats.length === 0) {
+        container.innerHTML = '<div class="chat-list-empty">暂无对话</div>';
+        return;
+      }
+
+      container.innerHTML = sortedChats.map(id => `
+        <div class="chat-list-item ${id === currentChatId ? 'active' : ''}" onclick="switchChat('${id}')">
+          <span class="title">${escapeHtml(chats[id].title || '新对话')}</span>
+          <button class="delete-btn" onclick="event.stopPropagation(); deleteChat('${id}')">删除</button>
+        </div>
+      `).join('');
+    }
+
+    function deleteChat(chatId) {
+      if (Object.keys(chats).length === 1) {
+        alert('至少保留一个对话');
+        return;
+      }
+      if (confirm('确定要删除这个对话吗？')) {
+        delete chats[chatId];
+        if (currentChatId === chatId) {
+          const remaining = Object.keys(chats).sort((a, b) => chats[b].createdAt - chats[a].createdAt);
+          currentChatId = remaining[0];
+        }
+        saveChats();
+        updateChatSelect();
+        renderMessages();
+        updateTokenStats();
+      }
+    }
+
+    // Close chat list when clicking outside
+    document.addEventListener('click', function(e) {
+      const dropdown = document.getElementById('chat-list-dropdown');
+      const selector = document.querySelector('.chat-selector');
+      if (!selector.contains(e.target)) {
+        dropdown.classList.remove('show');
+      }
+    });
 
     // Initialize
     loadData();
