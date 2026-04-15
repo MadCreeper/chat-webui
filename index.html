@@ -319,53 +319,79 @@
     .empty-state h2 { font-size: 20px; margin-bottom: 8px; color: #666; }
 
     /* Markdown styles */
-    .message-bubble .markdown-body {
-      font-size: 14px;
-      line-height: 1.5;
+    .message-bubble {
+      text-align: left;
     }
-    .message-bubble .markdown-body p {
-      margin: 0 0 8px 0;
+    .message-bubble > *:first-child {
+      margin-top: 0;
     }
-    .message-bubble .markdown-body p:last-child {
+    .message-bubble > *:last-child {
       margin-bottom: 0;
     }
-    .message-bubble .markdown-body code {
+    .message-bubble p {
+      margin: 0 0 8px 0;
+    }
+    .message-bubble p:last-child {
+      margin-bottom: 0;
+    }
+    .message-bubble code {
       background: #f0f0f0;
       padding: 2px 4px;
       border-radius: 3px;
       font-family: monospace;
       font-size: 13px;
     }
-    .message-bubble .markdown-body pre {
+    .message-bubble pre {
       background: #f5f5f5;
       padding: 10px;
       border-radius: 6px;
       overflow-x: auto;
       margin: 8px 0;
     }
-    .message-bubble .markdown-body pre code {
+    .message-bubble pre code {
       background: none;
       padding: 0;
     }
-    .message-bubble .markdown-body ul, .message-bubble .markdown-body ol {
+    .message-bubble ul, .message-bubble ol {
       margin: 8px 0;
       padding-left: 20px;
     }
-    .message-bubble .markdown-body blockquote {
+    .message-bubble li {
+      margin: 4px 0;
+    }
+    .message-bubble blockquote {
       border-left: 3px solid #ddd;
       margin: 8px 0;
       padding-left: 12px;
       color: #666;
     }
-    .message-bubble .markdown-body a {
+    .message-bubble a {
       color: #2563eb;
     }
-    .message-bubble .markdown-body h1, .message-bubble .markdown-body h2, .message-bubble .markdown-body h3 {
+    .message-bubble h1, .message-bubble h2, .message-bubble h3 {
       margin: 12px 0 8px 0;
     }
-    .message-bubble .markdown-body img {
+    .message-bubble img {
       max-width: 100%;
       border-radius: 4px;
+    }
+    .message-bubble table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 8px 0;
+    }
+    .message-bubble th, .message-bubble td {
+      border: 1px solid #e5e5e5;
+      padding: 6px 10px;
+      text-align: left;
+    }
+    .message-bubble th {
+      background: #f5f5f5;
+    }
+    .message-bubble hr {
+      border: none;
+      border-top: 1px solid #e5e5e5;
+      margin: 12px 0;
     }
   </style>
 </head>
@@ -612,9 +638,15 @@
       container.insertBefore(placeholderDiv, typing);
       renderStreamingMessage(placeholderDiv, assistantMessage);
 
-      let totalTokens = 0;
+      let promptTokens = 0;
+      let completionTokens = 0;
       let lastError = null;
       const maxRetries = 3;
+
+      // Estimate prompt tokens (rough estimate: ~4 chars per token)
+      const messagesForApi = messages.slice(0, -1).slice(-20);
+      const promptText = messagesForApi.map(m => m.role + ': ' + m.content).join('\n');
+      promptTokens = Math.ceil(promptText.length / 4);
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
@@ -626,7 +658,7 @@
             },
             body: JSON.stringify({
               model: settings.model,
-              messages: messages.slice(0, -1).slice(-20).map(m => ({ role: m.role, content: m.content })),
+              messages: messagesForApi.map(m => ({ role: m.role, content: m.content })),
               stream: true
             })
           });
@@ -662,9 +694,10 @@
                   renderStreamingMessage(placeholderDiv, assistantMessage);
                   container.scrollTop = container.scrollHeight;
                 }
-                // Track token count from usage if available
+                // Track token count from usage if available (use last one)
                 if (json.usage) {
-                  totalTokens = json.usage.total_tokens || 0;
+                  promptTokens = json.usage.prompt_tokens || promptTokens;
+                  completionTokens = json.usage.completion_tokens || 0;
                 }
               } catch (e) {
                 // Skip invalid JSON
@@ -672,16 +705,17 @@
             }
           }
 
-          // If no streaming usage, estimate from content length
-          if (totalTokens === 0) {
-            totalTokens = Math.ceil(assistantMessage.content.length / 4);
+          // Estimate completion tokens if not provided
+          if (completionTokens === 0) {
+            completionTokens = Math.ceil(assistantMessage.content.length / 4);
           }
-          assistantMessage.tokens = totalTokens;
+          assistantMessage.tokens = promptTokens + completionTokens;
 
           // Update token stats
           const chat = chats[currentChatId];
-          chat.tokenUsage.completion += totalTokens;
-          chat.tokenUsage.total += totalTokens;
+          chat.tokenUsage.prompt += promptTokens;
+          chat.tokenUsage.completion += completionTokens;
+          chat.tokenUsage.total += promptTokens + completionTokens;
           updateTokenStats();
 
           saveChats();
