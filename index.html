@@ -827,6 +827,7 @@
             body: JSON.stringify({
               model: settings.model,
               messages: messagesForApi.map(buildApiMessage),
+              reasoning_effort: settings.thinkingEffort || 'high',
               stream: true
             })
           });
@@ -857,12 +858,12 @@
               try {
                 const json = JSON.parse(data);
                 const content = json.choices?.[0]?.delta?.content || '';
-                const thinking = json.choices?.[0]?.delta?.thinking || '';
+                const reasoning = json.choices?.[0]?.delta?.reasoning_content || '';
 
                 // Handle thinking content
-                if (thinking) {
+                if (reasoning) {
                   if (!assistantMessage.thinking) assistantMessage.thinking = '';
-                  assistantMessage.thinking += thinking;
+                  assistantMessage.thinking += reasoning;
                   if (thinkingDiv) thinkingDiv.innerText = assistantMessage.thinking;
                 }
 
