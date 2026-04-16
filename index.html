@@ -827,7 +827,7 @@
             body: JSON.stringify({
               model: settings.model,
               messages: messagesForApi.map(buildApiMessage),
-              thinking: settings.thinkingEffort || 'high',
+              ...(settings.thinkingEffort ? { thinking: settings.thinkingEffort } : {}),
               stream: true
             })
           });
