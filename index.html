@@ -367,10 +367,10 @@
       font-size: 16px;
       transition: all 0.2s;
     }
-    #effort-btn:hover { background: #f5f5f5; }
-    #effort-btn.low { background: #dcfce7; border-color: #86efac; }
-    #effort-btn.medium { background: #fef9c3; border-color: #fde047; }
-    #effort-btn.high { background: #fee2e2; border-color: #fca5a5; }
+    #effort-slider {
+      width: 80px;
+      cursor: pointer;
+    }
 
     /* Settings Modal */
     #settings-modal {
@@ -550,7 +550,7 @@
       <input type="file" id="image-input" accept="image/*" multiple style="display: none;" onchange="handleImageUpload(event)">
       <button id="upload-btn" onclick="document.getElementById('image-input').click()" title="上传图片">📎</button>
       <textarea id="message-input" placeholder="输入消息..." rows="1" onkeydown="handleKeydown(event)"></textarea>
-      <button id="effort-btn" onclick="cycleThinkingEffort()" title="思考强度">🧠</button>
+      <input type="range" id="effort-slider" min="0" max="2" value="2" title="思考强度" onchange="updateThinkingEffort(this.value)" oninput="updateEffortIndicator(this.value)">
       <button id="send-btn" onclick="sendMessage()">发送</button>
     </div>
     <div id="image-preview" style="display: none;"></div>
@@ -585,11 +585,6 @@
           <option value="doubao-seed-code">doubao-seed-code</option>
         </select>
         <input type="text" id="model-name" placeholder="输入自定义模型ID" style="display: none; margin-top: 8px;">
-      </div>
-      <div class="form-group">
-        <label>思考强度 (Thinking Effort): <span id="thinking-effort-value">high</span></label>
-        <input type="range" id="thinking-effort" min="0" max="2" value="2" step="1" style="width:100%">
-        <div style="font-size:11px;color:#999;margin-top:4px">低 / 中 / 高</div>
       </div>
       <div class="modal-actions">
         <button class="cancel" onclick="hideSettings()">取消</button>
@@ -1071,22 +1066,23 @@
       this.style.height = Math.min(this.scrollHeight, 300) + 'px';
     });
 
-    // Cycle thinking effort on button click
-    function cycleThinkingEffort() {
-      const currentIndex = THINKING_EFFORT_MAP.indexOf(settings.thinkingEffort);
-      const nextIndex = (currentIndex + 1) % THINKING_EFFORT_MAP.length;
-      settings.thinkingEffort = THINKING_EFFORT_MAP[nextIndex];
+    // Update thinking effort from slider
+    function updateThinkingEffort(value) {
+      settings.thinkingEffort = THINKING_EFFORT_MAP[value] || 'high';
       saveSettingsToStorage();
-      updateEffortButton();
     }
 
-    function updateEffortButton() {
-      const btn = document.getElementById('effort-btn');
-      btn.className = settings.thinkingEffort || 'high';
+    function updateEffortIndicator(value) {
+      const slider = document.getElementById('effort-slider');
+      const labels = ['低', '中', '高'];
+      slider.title = '思考强度: ' + labels[value];
     }
 
-    // Initialize effort button
-    updateEffortButton();
+    // Initialize slider
+    (function initEffortSlider() {
+      const idx = THINKING_EFFORT_MAP.indexOf(settings.thinkingEffort);
+      document.getElementById('effort-slider').value = idx >= 0 ? idx : 2;
+    })();
 
     // Settings modal
     function showSettings() {
@@ -1120,11 +1116,6 @@
         customInput.style.display = 'block';
         customInput.value = settings.model;
       }
-
-      // Thinking effort
-      const effortIndex = THINKING_EFFORT_MAP.indexOf(settings.thinkingEffort);
-      document.getElementById('thinking-effort').value = effortIndex >= 0 ? effortIndex : 2;
-      document.getElementById('thinking-effort-value').textContent = settings.thinkingEffort || 'high';
     }
 
     function handleModelChange() {
@@ -1147,21 +1138,12 @@
       const customInput = document.getElementById('model-name');
       settings.model = select.value === 'custom' ? customInput.value.trim() : select.value;
 
-      // Thinking effort
-      const effortIndex = parseInt(document.getElementById('thinking-effort').value);
-      settings.thinkingEffort = THINKING_EFFORT_MAP[effortIndex] || 'high';
-
       if (!settings.model) settings.model = 'minimax-m2.5';
 
       saveSettingsToStorage();
       hideSettings();
       alert('设置已保存');
     }
-
-    // Update thinking effort display on slider change
-    document.getElementById('thinking-effort').addEventListener('input', function() {
-      document.getElementById('thinking-effort-value').textContent = THINKING_EFFORT_MAP[this.value];
-    });
 
     // Image handling
     let uploadedImages = [];
