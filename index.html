@@ -207,6 +207,25 @@
       justify-content: flex-end;
       margin-top: 4px;
     }
+    .message.ai .thinking-content {
+      background: #f5f5f5;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 8px;
+      white-space: pre-wrap;
+      font-family: monospace;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .message.ai .thinking-content::-webkit-scrollbar {
+      width: 4px;
+    }
+    .message.ai .thinking-content::-webkit-scrollbar-thumb {
+      background: #ccc;
+      border-radius: 2px;
+    }
     .message.ai .toggle-btn:hover {
       background: #f5f5f5;
       color: #333;
@@ -262,10 +281,11 @@
       border-top: 1px solid #e5e5e5;
     }
     #input-container {
-      max-width: 600px;
+      max-width: 900px;
       margin: 0 auto;
       display: flex;
       gap: 10px;
+      align-items: flex-end;
     }
     #message-input {
       flex: 1;
@@ -273,9 +293,10 @@
       border: 1px solid #e5e5e5;
       border-radius: 8px;
       font-size: 14px;
-      resize: none;
+      resize: vertical;
       font-family: inherit;
-      max-height: 120px;
+      min-height: 44px;
+      max-height: 300px;
     }
     #message-input:focus { outline: none; border-color: #2563eb; }
     #upload-btn {
@@ -543,6 +564,11 @@
         </select>
         <input type="text" id="model-name" placeholder="输入自定义模型ID" style="display: none; margin-top: 8px;">
       </div>
+      <div class="form-group">
+        <label>思考强度 (Thinking Effort): <span id="thinking-effort-value">high</span></label>
+        <input type="range" id="thinking-effort" min="0" max="2" value="2" step="1" style="width:100%">
+        <div style="font-size:11px;color:#999;margin-top:4px">低 / 中 / 高</div>
+      </div>
       <div class="modal-actions">
         <button class="cancel" onclick="hideSettings()">取消</button>
         <button class="save" onclick="saveSettings()">保存</button>
@@ -559,8 +585,11 @@
     let settings = {
       apiUrl: '',
       apiKey: '',
-      model: 'minimax-m2.5'
+      model: 'minimax-m2.5',
+      thinkingEffort: 'high'
     };
+
+    const THINKING_EFFORT_MAP = ['low', 'medium', 'high'];
 
     // Get current messages
     function getCurrentMessages() {
@@ -643,8 +672,10 @@
           const isFailed = msg.content.startsWith('❌');
           const retryBtn = isFailed ? `<button class="retry-btn" onclick="retryMessage(${index})">重试</button>` : '';
           const toggleBtn = !isFailed ? `<button class="toggle-btn" onclick="toggleRawText(${index}, this)">Raw</button>` : '';
-          const actionsHtml = (retryBtn || toggleBtn) ? `<div class="message-actions">${retryBtn}${toggleBtn}</div>` : '';
-          div.innerHTML = `<div class="message-bubble"><div class="md-content">${contentHtml}</div>${metaHtml}${actionsHtml}</div>`;
+          const thinkingBtn = msg.thinking ? `<button class="toggle-btn" onclick="toggleThinking(${index}, this)">思考</button>` : '';
+          const actionsHtml = (retryBtn || toggleBtn || thinkingBtn) ? `<div class="message-actions">${thinkingBtn}${retryBtn}${toggleBtn}</div>` : '';
+          const thinkingHtml = msg.thinking ? `<div class="thinking-content" style="display:none">${escapeHtml(msg.thinking)}</div>` : '';
+          div.innerHTML = `<div class="message-bubble">${thinkingHtml}<div class="md-content">${contentHtml}</div>${metaHtml}${actionsHtml}</div>`;
           aiGroup.appendChild(div);
         } else {
           // Close any AI group before user message
@@ -752,6 +783,10 @@
       messageDiv.className = 'message ai';
       const bubbleDiv = document.createElement('div');
       bubbleDiv.className = 'message-bubble';
+      const thinkingDiv = document.createElement('div');
+      thinkingDiv.className = 'thinking-content';
+      thinkingDiv.style.display = 'none';
+      bubbleDiv.appendChild(thinkingDiv);
       messageDiv.appendChild(bubbleDiv);
       placeholderDiv.appendChild(messageDiv);
       container.insertBefore(placeholderDiv, typing);
@@ -792,6 +827,7 @@
             body: JSON.stringify({
               model: settings.model,
               messages: messagesForApi.map(buildApiMessage),
+              thinking: settings.thinkingEffort || 'high',
               stream: true
             })
           });
@@ -822,6 +858,15 @@
               try {
                 const json = JSON.parse(data);
                 const content = json.choices?.[0]?.delta?.content || '';
+                const thinking = json.choices?.[0]?.delta?.thinking || '';
+
+                // Handle thinking content
+                if (thinking) {
+                  if (!assistantMessage.thinking) assistantMessage.thinking = '';
+                  assistantMessage.thinking += thinking;
+                  if (thinkingDiv) thinkingDiv.innerText = assistantMessage.thinking;
+                }
+
                 if (content) {
                   assistantMessage.content += content;
                   // Direct DOM update for better performance
@@ -966,10 +1011,30 @@
       }
     }
 
+    // Toggle thinking content visibility
+    function toggleThinking(msgIndex, btn) {
+      const messages = getCurrentMessages();
+      const msg = messages[msgIndex];
+      if (!msg || !msg.thinking) return;
+
+      const bubble = btn.closest('.message-bubble');
+      const thinkingDiv = bubble.querySelector('.thinking-content');
+
+      if (thinkingDiv.style.display === 'none') {
+        thinkingDiv.style.display = 'block';
+        btn.classList.add('active');
+        btn.textContent = '隐藏思考';
+      } else {
+        thinkingDiv.style.display = 'none';
+        btn.classList.remove('active');
+        btn.textContent = '思考';
+      }
+    }
+
     // Auto-resize textarea
     document.getElementById('message-input').addEventListener('input', function() {
       this.style.height = 'auto';
-      this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+      this.style.height = Math.min(this.scrollHeight, 300) + 'px';
     });
 
     // Settings modal
@@ -999,6 +1064,11 @@
         customInput.style.display = 'block';
         customInput.value = settings.model;
       }
+
+      // Thinking effort
+      const effortIndex = THINKING_EFFORT_MAP.indexOf(settings.thinkingEffort);
+      document.getElementById('thinking-effort').value = effortIndex >= 0 ? effortIndex : 2;
+      document.getElementById('thinking-effort-value').textContent = settings.thinkingEffort || 'high';
     }
 
     function handleModelChange() {
@@ -1021,12 +1091,21 @@
       const customInput = document.getElementById('model-name');
       settings.model = select.value === 'custom' ? customInput.value.trim() : select.value;
 
+      // Thinking effort
+      const effortIndex = parseInt(document.getElementById('thinking-effort').value);
+      settings.thinkingEffort = THINKING_EFFORT_MAP[effortIndex] || 'high';
+
       if (!settings.model) settings.model = 'minimax-m2.5';
 
       saveSettingsToStorage();
       hideSettings();
       alert('设置已保存');
     }
+
+    // Update thinking effort display on slider change
+    document.getElementById('thinking-effort').addEventListener('input', function() {
+      document.getElementById('thinking-effort-value').textContent = THINKING_EFFORT_MAP[this.value];
+    });
 
     // Image handling
     let uploadedImages = [];
