@@ -208,16 +208,21 @@
       margin-top: 4px;
     }
     .message.ai .thinking-content {
-      background: #f5f5f5;
+      background: #f8f8f8;
       padding: 8px 10px;
       border-radius: 6px;
       font-size: 12px;
-      color: #666;
+      color: #888;
       margin-bottom: 8px;
       white-space: pre-wrap;
       font-family: monospace;
       max-height: 200px;
       overflow-y: auto;
+      border-left: 3px solid #ccc;
+    }
+    .message.ai .thinking-content.streaming {
+      color: #999;
+      font-style: italic;
     }
     .message.ai .thinking-content::-webkit-scrollbar {
       width: 4px;
@@ -862,7 +867,14 @@
 
                 // Handle thinking content
                 if (reasoning) {
-                  if (!assistantMessage.thinking) assistantMessage.thinking = '';
+                  if (!assistantMessage.thinking) {
+                    assistantMessage.thinking = '';
+                    // Show thinking div when first reasoning content arrives
+                    if (thinkingDiv) {
+                      thinkingDiv.style.display = 'block';
+                      thinkingDiv.classList.add('streaming');
+                    }
+                  }
                   assistantMessage.thinking += reasoning;
                   if (thinkingDiv) thinkingDiv.innerText = assistantMessage.thinking;
                 }
@@ -900,6 +912,8 @@
           // Save and render with markdown after streaming completes
           saveChats();
           renderMessages();
+          // Remove streaming style from thinking div
+          if (thinkingDiv) thinkingDiv.classList.remove('streaming');
           break;
 
         } catch (error) {
