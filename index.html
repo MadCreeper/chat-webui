@@ -876,7 +876,10 @@
                     }
                   }
                   assistantMessage.thinking += reasoning;
-                  if (thinkingDiv) thinkingDiv.innerText = assistantMessage.thinking;
+                  if (thinkingDiv) {
+                    thinkingDiv.innerText = assistantMessage.thinking;
+                    thinkingDiv.scrollTop = thinkingDiv.scrollHeight;
+                  }
                 }
 
                 if (content) {
