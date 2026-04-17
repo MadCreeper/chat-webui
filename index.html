@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chat UI</title>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -468,10 +470,30 @@
       border-radius: 6px;
       overflow-x: auto;
       margin: 8px 0;
+      position: relative;
     }
     .message-bubble pre code {
       background: none;
       padding: 0;
+    }
+    .message-bubble .code-copy-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 4px;
+      cursor: pointer;
+      color: #666;
+    }
+    .message-bubble .code-copy-btn:hover {
+      background: #f5f5f5;
+    }
+    .message-bubble .code-copy-btn.copied {
+      background: #dcfce7;
+      border-color: #86efac;
     }
     .message-bubble ul, .message-bubble ol {
       margin: 8px 0;
@@ -550,7 +572,11 @@
       <input type="file" id="image-input" accept="image/*" multiple style="display: none;" onchange="handleImageUpload(event)">
       <button id="upload-btn" onclick="document.getElementById('image-input').click()" title="上传图片">📎</button>
       <textarea id="message-input" placeholder="输入消息..." rows="1" onkeydown="handleKeydown(event)"></textarea>
-      <input type="range" id="effort-slider" min="0" max="2" value="2" title="思考强度" onchange="updateThinkingEffort(this.value)" oninput="updateEffortIndicator(this.value)">
+      <div style="display:flex;align-items:center;gap:4px;">
+        <span style="font-size:11px;color:#999;">思考</span>
+        <input type="range" id="effort-slider" min="0" max="2" value="2" onchange="updateThinkingEffort(this.value)" oninput="updateEffortIndicator(this.value)">
+        <span id="effort-label" style="font-size:11px;color:#666;min-width:16px;">高</span>
+      </div>
       <button id="send-btn" onclick="sendMessage()">发送</button>
     </div>
     <div id="image-preview" style="display: none;"></div>
@@ -607,6 +633,16 @@
     };
 
     const THINKING_EFFORT_MAP = ['low', 'medium', 'high'];
+
+    // Configure marked with highlight.js
+    marked.setOptions({
+      highlight: function(code, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+          return hljs.highlight(code, { language: lang }).value;
+        }
+        return hljs.highlightAuto(code).value;
+      }
+    });
 
     // Get current messages
     function getCurrentMessages() {
@@ -727,6 +763,32 @@
 
       // Scroll to bottom
       container.scrollTop = container.scrollHeight;
+
+      // Add copy buttons to code blocks
+      addCodeCopyButtons();
+    }
+
+    function addCodeCopyButtons() {
+      document.querySelectorAll('.message-bubble pre').forEach(pre => {
+        if (pre.querySelector('.code-copy-btn')) return;
+        const code = pre.querySelector('code');
+        const codeText = code ? code.textContent : pre.textContent;
+        const btn = document.createElement('button');
+        btn.className = 'code-copy-btn';
+        btn.textContent = '复制';
+        btn.onclick = function() {
+          navigator.clipboard.writeText(codeText).then(() => {
+            btn.textContent = '已复制';
+            btn.classList.add('copied');
+            setTimeout(() => {
+              btn.textContent = '复制';
+              btn.classList.remove('copied');
+            }, 2000);
+          });
+        };
+        pre.style.position = 'relative';
+        pre.appendChild(btn);
+      });
     }
 
     function escapeHtml(text) {
@@ -1073,9 +1135,8 @@
     }
 
     function updateEffortIndicator(value) {
-      const slider = document.getElementById('effort-slider');
       const labels = ['低', '中', '高'];
-      slider.title = '思考强度: ' + labels[value];
+      document.getElementById('effort-label').textContent = labels[value];
     }
 
     // Initialize slider
